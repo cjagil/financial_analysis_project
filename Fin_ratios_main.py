@@ -2,6 +2,8 @@
 import pandas as pd
 from data_extraction import get_cik_from_ticker, get_company_facts, extract_financial_data, compile_financial_data
 from ratios_calculator import calculate_ratios
+from market_data import get_market_data
+
 
 def main():
     # Prompt the user for a ticker symbol or CIK number
@@ -29,18 +31,31 @@ def main():
         return
 
     # Compile financial data into a DataFrame
-    df = compile_financial_data(data_points)
-    if df.empty:
+    financial_df = compile_financial_data(data_points)
+    if financial_df.empty:
         print("No financial data to display.")
         return
 
-    # Calculate ratios
-    df = calculate_ratios(df)
+# Extract filing dates for market data retrieval
+    filing_dates = financial_df['Year'].apply(lambda x: f"{x}-12-31").tolist()
 
-    # Select and rename columns for display
+    # Get market data
+    market_df = get_market_data(ticker, filing_dates)
+
+    # Ensure 'Year' column is of the same type in both DataFrames
+    financial_df['Year'] = financial_df['Year'].astype(int)
+    market_df['Year'] = market_df['Year'].astype(int)
+
+    # Merge financial data with market data based on the 'Year' column
+    final_df = pd.merge(financial_df, market_df, on='Year', how='left', suffixes=('_financial', '_market'))
+
+    # Calculate ratios using the merged data
+    df = calculate_ratios(final_df)
+
+    # Select and rename columns for display, including MarketCap
     df_display = df[['Year', 'Revenue', 'NetIncome', 'TotalAssets', 'StockholdersEquity',
                      'Net Profit Margin', 'Asset Turnover', 'Equity Multiplier', 'ROE',
-                     'Gross Profit Margin', 'CurrentAssets', 'CurrentLiabilities', 'Current Ratio']].copy()
+                     'Gross Profit Margin', 'CurrentAssets', 'CurrentLiabilities', 'Current Ratio', 'MarketCap']].copy()
 
     df_display = df_display.rename(columns={
         'NetIncome': 'Net Income',
@@ -48,6 +63,7 @@ def main():
         'StockholdersEquity': 'Shareholders\' Equity',
         'CurrentAssets': 'Current Assets',
         'CurrentLiabilities': 'Current Liabilities',
+        'MarketCap': 'Market Cap',
         'Year': 'Reporting Year'
     })
 
@@ -57,3 +73,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
