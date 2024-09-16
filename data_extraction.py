@@ -38,7 +38,7 @@ def get_company_facts(cik):
         print(f"Failed to retrieve data: {response.status_code}")
         return None
 
-def extract_financial_data(company_facts):
+def extract_financial_data(company_facts, num_years):
     facts = company_facts.get('facts', {})
     data_points = {}
 
@@ -90,7 +90,7 @@ def extract_financial_data(company_facts):
             df_temp = pd.DataFrame(data_points[key])
             df_temp['end'] = pd.to_datetime(df_temp['end'])
             df_temp.sort_values(by='end', ascending=False, inplace=True)
-            df_temp = df_temp.drop_duplicates(subset=['Year']).head(3)
+            df_temp = df_temp.drop_duplicates(subset=['Year']).head(num_years)
             if key == 'Revenue':
                 df_temp = df_temp.loc[df_temp.groupby('Year')['val'].idxmax()]
             data_points[key] = df_temp.to_dict('records')
@@ -103,7 +103,7 @@ def extract_financial_data(company_facts):
 
     return data_points
 
-def compile_financial_data(data_points):
+def compile_financial_data(data_points, num_years):
     df_dict = {}
     for key, items in data_points.items():
         df = pd.DataFrame(items)
@@ -124,5 +124,5 @@ def compile_financial_data(data_points):
         df_merged = pd.merge(df_merged, df, on=['Year'], how='outer', suffixes=(None, '_dup'))
     df_merged = df_merged.loc[:, ~df_merged.columns.str.endswith('_dup')]
     df_merged.sort_values('Year', ascending=False, inplace=True)
-    df_merged = df_merged.head(3)
+    df_merged = df_merged.head(num_years)  # Use num_years instead of 3
     return df_merged

@@ -1,8 +1,11 @@
 import yfinance as yf
 import pandas as pd
 
-def get_market_data(ticker, filing_dates):
+def get_market_data(ticker, filing_dates, num_years):
     market_data = []
+
+    # Limit the filing dates to the specified number of years
+    filing_dates = filing_dates[:num_years]
 
     for date in filing_dates:
         try:

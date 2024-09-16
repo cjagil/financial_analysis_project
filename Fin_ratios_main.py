@@ -8,8 +8,6 @@ import tkinter as tk
 from tkinter import ttk
 from tabulate import tabulate
 
-# Assuming all other imports and functions are already in your script...
-
 def display_in_gui(df):
     # Create the main window
     root = tk.Tk()
@@ -38,7 +36,7 @@ def display_in_gui(df):
     # Define the columns
     for col in df.columns:
         tree.heading(col, text=col)
-        tree.column(col, anchor='center', width=120)  # Set a default column width
+        tree.column(col, anchor='center', width=120)
 
     # Insert data into the Treeview
     for index, row in df.iterrows():
@@ -50,7 +48,16 @@ def display_in_gui(df):
 def main():
     # Prompt the user for a ticker symbol or CIK number
     user_input = input("Enter a ticker symbol or CIK number: ").strip()
-    
+
+    # Prompt the user for the number of years to extract data for
+    try:
+        num_years = int(input("Enter the number of years to extract data for: "))
+        if num_years <= 0:
+            raise ValueError("Number of years must be positive.")
+    except ValueError as e:
+        print(f"Invalid input: {e}")
+        return
+
     # Determine if the input is a ticker or CIK
     ticker = None
     if user_input.isdigit():
@@ -66,23 +73,23 @@ def main():
     if not company_facts:
         return
 
-    # Extract financial data
-    data_points = extract_financial_data(company_facts)
+    # Extract financial data with num_years
+    data_points = extract_financial_data(company_facts, num_years)
     if not data_points:
         print("No financial data extracted.")
         return
 
     # Compile financial data into a DataFrame
-    financial_df = compile_financial_data(data_points)
+    financial_df = compile_financial_data(data_points, num_years)  # Pass num_years to compile_financial_data
     if financial_df.empty:
         print("No financial data to display.")
         return
 
-# Extract filing dates for market data retrieval
+    # Extract filing dates for market data retrieval
     filing_dates = financial_df['Year'].apply(lambda x: f"{x}-12-31").tolist()
 
     # Get market data
-    market_df = get_market_data(ticker, filing_dates)
+    market_df = get_market_data(ticker, filing_dates, num_years)
 
     # Ensure 'Year' column is of the same type in both DataFrames
     financial_df['Year'] = financial_df['Year'].astype(int)
@@ -94,7 +101,7 @@ def main():
     # Calculate ratios using the merged data
     df = calculate_ratios(final_df)
 
-     # Convert specific columns to millions of dollars
+    # Convert specific columns to millions of dollars
     columns_to_convert = ['Revenue', 'NetIncome', 'TotalAssets', 'StockholdersEquity', 'CurrentAssets', 'CurrentLiabilities', 'MarketCap']
     for col in columns_to_convert:
         df[col] = df[col] / 1_000_000
@@ -111,7 +118,8 @@ def main():
         'CurrentAssets': 'Current Assets (Millions)',
         'CurrentLiabilities': 'Current Liabilities (Millions)',
         'Year': 'Reporting Year',
-        'Revenue': 'Revenue (Millions)'
+        'Revenue': 'Revenue (Millions)',
+        'MarketCap': 'Market Cap (Millions)'
     })
 
     # Convert 'Year' column to string to avoid formatting it with decimals
@@ -125,4 +133,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
