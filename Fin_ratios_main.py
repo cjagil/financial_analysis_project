@@ -4,6 +4,48 @@ from data_extraction import get_cik_from_ticker, get_company_facts, extract_fina
 from ratios_calculator import calculate_ratios
 from market_data import get_market_data
 
+import tkinter as tk
+from tkinter import ttk
+from tabulate import tabulate
+
+# Assuming all other imports and functions are already in your script...
+
+def display_in_gui(df):
+    # Create the main window
+    root = tk.Tk()
+    root.title("Financial Ratios Output")
+
+    # Create a frame for the Treeview
+    frame = ttk.Frame(root)
+    frame.pack(padx=10, pady=10, fill='both', expand=True)
+
+    # Create the Treeview widget with horizontal scrollbar support
+    tree = ttk.Treeview(frame, columns=list(df.columns), show='headings')
+
+    # Add a vertical scrollbar to the Treeview
+    vsb = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+    vsb.pack(side='right', fill='y')
+    tree.configure(yscroll=vsb.set)
+
+    # Add a horizontal scrollbar to the Treeview
+    hsb = ttk.Scrollbar(frame, orient='horizontal', command=tree.xview)
+    hsb.pack(side='bottom', fill='x')
+    tree.configure(xscroll=hsb.set)
+
+    # Pack the Treeview
+    tree.pack(side='left', fill='both', expand=True)
+
+    # Define the columns
+    for col in df.columns:
+        tree.heading(col, text=col)
+        tree.column(col, anchor='center', width=120)  # Set a default column width
+
+    # Insert data into the Treeview
+    for index, row in df.iterrows():
+        tree.insert('', 'end', values=list(row))
+
+    # Run the application
+    root.mainloop()
 
 def main():
     # Prompt the user for a ticker symbol or CIK number
@@ -52,24 +94,34 @@ def main():
     # Calculate ratios using the merged data
     df = calculate_ratios(final_df)
 
+     # Convert specific columns to millions of dollars
+    columns_to_convert = ['Revenue', 'NetIncome', 'TotalAssets', 'StockholdersEquity', 'CurrentAssets', 'CurrentLiabilities', 'MarketCap']
+    for col in columns_to_convert:
+        df[col] = df[col] / 1_000_000
+
     # Select and rename columns for display, including MarketCap
     df_display = df[['Year', 'Revenue', 'NetIncome', 'TotalAssets', 'StockholdersEquity',
                      'Net Profit Margin', 'Asset Turnover', 'Equity Multiplier', 'ROE',
                      'Gross Profit Margin', 'CurrentAssets', 'CurrentLiabilities', 'Current Ratio', 'MarketCap']].copy()
 
     df_display = df_display.rename(columns={
-        'NetIncome': 'Net Income',
-        'TotalAssets': 'Total Assets',
-        'StockholdersEquity': 'Shareholders\' Equity',
-        'CurrentAssets': 'Current Assets',
-        'CurrentLiabilities': 'Current Liabilities',
-        'MarketCap': 'Market Cap',
-        'Year': 'Reporting Year'
+        'NetIncome': 'Net Income (Millions)',
+        'TotalAssets': 'Total Assets (Millions)',
+        'StockholdersEquity': 'Shareholders\' Equity (Millions)',
+        'CurrentAssets': 'Current Assets (Millions)',
+        'CurrentLiabilities': 'Current Liabilities (Millions)',
+        'Year': 'Reporting Year',
+        'Revenue': 'Revenue (Millions)'
     })
 
-    # Print the final DataFrame
-    pd.options.display.float_format = '{:,.2f}'.format
-    print(df_display)
+    # Convert 'Year' column to string to avoid formatting it with decimals
+    df_display['Reporting Year'] = df_display['Reporting Year'].astype(str)
+
+    # Format all numeric columns to three decimal points
+    df_display = df_display.applymap(lambda x: f"{x:,.3f}" if isinstance(x, (int, float)) else x)
+
+    # Display the final DataFrame in the GUI
+    display_in_gui(df_display)
 
 if __name__ == '__main__':
     main()
