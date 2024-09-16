@@ -86,14 +86,34 @@ def extract_financial_data(company_facts, num_years):
                                     'Year': fy
                                 }
                                 data_points[key].append(data_point)
+        
+        # Debug log: Print data before filtering and sorting
+        print(f"\nCollected raw data points for {key}:")
+        for dp in data_points[key]:
+            print(dp)
+
         if data_points[key]:
             df_temp = pd.DataFrame(data_points[key])
             df_temp['end'] = pd.to_datetime(df_temp['end'])
-            df_temp.sort_values(by='end', ascending=False, inplace=True)
-            df_temp = df_temp.drop_duplicates(subset=['Year']).head(num_years)
+
+            # Sort values first by year and then by end date to get the latest report for each year
+            df_temp.sort_values(by=['Year', 'end'], ascending=[False, False], inplace=True)
+
+            # Drop duplicates by year, keeping the latest end date within each year
+            df_temp = df_temp.drop_duplicates(subset=['Year'])
+
+            # Only keep the most recent `num_years` worth of data
+            df_temp = df_temp.head(num_years)
+
             if key == 'Revenue':
                 df_temp = df_temp.loc[df_temp.groupby('Year')['val'].idxmax()]
+
+            # Debug log: Print data after sorting and filtering
+            print(f"\nData points for {key} after sorting and filtering:")
+            print(df_temp)
+            
             data_points[key] = df_temp.to_dict('records')
+
         print(f"Collected {len(data_points[key])} data points for {key}.")
 
     collect_data_points('Revenue', revenue_tags, data_points)
@@ -108,10 +128,16 @@ def compile_financial_data(data_points, num_years):
     for key, items in data_points.items():
         df = pd.DataFrame(items)
         if not df.empty:
+            # Debug log: Print before grouping
+            print(f"\nData points for {key} before grouping:")
+            print(df)
+            
             df = df.loc[df.groupby('Year')['val'].idxmax()]
             df = df[['Year', 'val']].rename(columns={'val': key})
             df_dict[key] = df
-            print(f"Data points for {key}:")
+
+            # Debug log: Print after grouping
+            print(f"\nData points for {key} after grouping:")
             print(df)
 
     if not df_dict:
@@ -124,5 +150,10 @@ def compile_financial_data(data_points, num_years):
         df_merged = pd.merge(df_merged, df, on=['Year'], how='outer', suffixes=(None, '_dup'))
     df_merged = df_merged.loc[:, ~df_merged.columns.str.endswith('_dup')]
     df_merged.sort_values('Year', ascending=False, inplace=True)
-    df_merged = df_merged.head(num_years)  # Use num_years instead of 3
+    df_merged = df_merged.head(num_years)
+
+    # Debug log: Final merged DataFrame
+    print("\nFinal merged DataFrame:")
+    print(df_merged)
+
     return df_merged
