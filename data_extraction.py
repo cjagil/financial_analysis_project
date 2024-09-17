@@ -1,5 +1,3 @@
-# data_extraction.py
-
 import pandas as pd
 
 # New tags for DCF analysis
@@ -17,7 +15,7 @@ tags = {
     'DepreciationAmortization': ['DepreciationAndAmortization', 'Depreciation'],
     'InterestExpense': ['InterestExpense', 'InterestAndDebtExpense'],
     'IncomeTaxExpense': ['IncomeTaxExpenseBenefit', 'IncomeTaxPaid'],
-    'LongTermDebt': ['LongTermDebt'],
+    'LongTermDebt': ['LongTermDebt', 'LongTermDebtNoncurrent', 'LongTermDebtCurrent'],  # Include backup tags
     'ShortTermBorrowings': ['ShortTermBorrowings'],
     'CashAndCashEquivalents': ['CashAndCashEquivalentsAtCarryingValue']
 }
@@ -45,7 +43,7 @@ def collect_data_points(facts, namespaces, key, tag_list, data_points, num_years
                                 'Year': fy
                             }
                             data_points[key].append(data_point)
-    
+
     # Data processing
     if data_points[key]:
         df_temp = pd.DataFrame(data_points[key])
@@ -56,6 +54,35 @@ def collect_data_points(facts, namespaces, key, tag_list, data_points, num_years
         if key == 'Revenue':
             df_temp = df_temp.loc[df_temp.groupby('Year')['val'].idxmax()]
         data_points[key] = df_temp.to_dict('records')
+
+        # If no long-term debt data found, attempt to sum 'LongTermDebtCurrent' and 'LongTermDebtNoncurrent'
+        if key == 'LongTermDebt' and not data_points[key]:
+            long_term_debt_current = ns_data.get('LongTermDebtCurrent', {}).get('units', {}).get('USD', [])
+            long_term_debt_noncurrent = ns_data.get('LongTermDebtNoncurrent', {}).get('units', {}).get('USD', [])
+            combined_debt = []
+
+            for item in long_term_debt_current + long_term_debt_noncurrent:
+                if item.get('form') == '10-K':
+                    end_date = item.get('end')
+                    fy = int(item.get('fy')) if item.get('fy') else None
+                    combined_debt.append({
+                        'item': key,
+                        'end': end_date,
+                        'val': item.get('val'),
+                        'namespace': namespace,
+                        'tag': 'CombinedLongTermDebt',
+                        'unit': 'USD',
+                        'form': item.get('form'),
+                        'Year': fy
+                    })
+
+            if combined_debt:
+                df_combined = pd.DataFrame(combined_debt)
+                df_combined['end'] = pd.to_datetime(df_combined['end'])
+                df_combined.sort_values(by=['Year', 'end'], ascending=[False, False], inplace=True)
+                df_combined = df_combined.drop_duplicates(subset=['Year'])
+                df_combined = df_combined.head(num_years)
+                data_points[key] = df_combined.to_dict('records')
 
 def extract_financial_data(company_facts, num_years):
     facts = company_facts.get('facts', {})
