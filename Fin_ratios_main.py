@@ -1,6 +1,8 @@
 # Fin_ratios_main.py
 import pandas as pd
-from data_extraction import get_cik_from_ticker, get_company_facts, extract_financial_data, compile_financial_data
+
+from data_collection import get_cik_from_ticker, get_company_facts
+from data_extraction import extract_financial_data, compile_financial_data
 from ratios_calculator import calculate_ratios
 from market_data import get_market_data
 

@@ -1,125 +1,70 @@
 # data_extraction.py
-import requests
+
 import pandas as pd
-import json
 
-def get_cik_from_ticker(ticker):
-    url = 'https://www.sec.gov/files/company_tickers.json'
-    headers = {
-        'User-Agent': 'Curtis Gile (curtis.j.gile@gmail.com)',
-        'Accept-Encoding': 'gzip, deflate',
-        'Host': 'www.sec.gov'
-    }
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        ticker_data = response.json()
-        for entry in ticker_data.values():
-            if entry['ticker'].lower() == ticker.lower():
-                print(f"Found CIK for ticker {ticker}: {entry['cik_str']}")
-                return int(entry['cik_str'])
-    print(f"Could not find CIK for ticker: {ticker}")
-    return None
+# New tags for DCF analysis
+tags = {
+    'Revenue': ['Revenues', 'SalesRevenueNet', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'TotalRevenue', 'SalesRevenueGoodsNet', 'SalesRevenueServicesNet'],
+    'CostOfGoodsSold': ['CostOfGoodsSold', 'CostOfRevenue', 'CostOfGoodsAndServicesSold'],
+    'GrossProfit': ['GrossProfit'],
+    'CurrentAssets': ['AssetsCurrent'],
+    'CurrentLiabilities': ['LiabilitiesCurrent'],
+    'NetIncome': ['NetIncomeLoss'],
+    'TotalAssets': ['Assets'],
+    'StockholdersEquity': ['StockholdersEquity', 'Equity'],
+    'OperatingCashFlow': ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'],
+    'CapitalExpenditures': ['CapitalExpenditures', 'PaymentsToAcquirePropertyPlantAndEquipment'],
+    'DepreciationAmortization': ['DepreciationAndAmortization', 'Depreciation'],
+    'InterestExpense': ['InterestExpense', 'InterestAndDebtExpense'],
+    'IncomeTaxExpense': ['IncomeTaxExpenseBenefit', 'IncomeTaxPaid'],
+    'LongTermDebt': ['LongTermDebt'],
+    'ShortTermBorrowings': ['ShortTermBorrowings'],
+    'CashAndCashEquivalents': ['CashAndCashEquivalentsAtCarryingValue']
+}
 
-def get_company_facts(cik):
-    url = f'https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json'
-    headers = {
-        'User-Agent': 'Curtis Gile (curtis.j.gile@gmail.com)',
-        'Accept-Encoding': 'gzip, deflate',
-        'Host': 'data.sec.gov'
-    }
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        company_facts = response.json()
-        with open('sec_company_facts.json', 'w') as f:
-            json.dump(company_facts, f, indent=2)
-        print("The full company facts have been saved to 'sec_company_facts.json'.")
-        return company_facts
-    else:
-        print(f"Failed to retrieve data: {response.status_code}")
-        return None
+def collect_data_points(facts, namespaces, key, tag_list, data_points, num_years):
+    data_points[key] = []
+    for namespace in namespaces:
+        ns_data = facts.get(namespace, {})
+        for tag_name in tag_list:
+            tag_data = ns_data.get(tag_name)
+            if tag_data and 'units' in tag_data:
+                for unit, values in tag_data['units'].items():
+                    for item in values:
+                        if item.get('form') == '10-K':
+                            end_date = item.get('end')
+                            fy = int(item.get('fy')) if item.get('fy') else None
+                            data_point = {
+                                'item': key,
+                                'end': end_date,
+                                'val': item.get('val'),
+                                'namespace': namespace,
+                                'tag': tag_name,
+                                'unit': unit,
+                                'form': item.get('form'),
+                                'Year': fy
+                            }
+                            data_points[key].append(data_point)
+    
+    # Data processing
+    if data_points[key]:
+        df_temp = pd.DataFrame(data_points[key])
+        df_temp['end'] = pd.to_datetime(df_temp['end'])
+        df_temp.sort_values(by=['Year', 'end'], ascending=[False, False], inplace=True)
+        df_temp = df_temp.drop_duplicates(subset=['Year'])
+        df_temp = df_temp.head(num_years)
+        if key == 'Revenue':
+            df_temp = df_temp.loc[df_temp.groupby('Year')['val'].idxmax()]
+        data_points[key] = df_temp.to_dict('records')
 
 def extract_financial_data(company_facts, num_years):
     facts = company_facts.get('facts', {})
+    namespaces = ['us-gaap']
     data_points = {}
 
-    revenue_tags = [
-        'Revenues',
-        'SalesRevenueNet',
-        'RevenueFromContractWithCustomerExcludingAssessedTax',
-        'TotalRevenue',
-        'SalesRevenueGoodsNet',
-        'SalesRevenueServicesNet'
-    ]
-    namespaces = ['us-gaap']
-
-    tags = {
-        'Revenue': revenue_tags,
-        'CostOfGoodsSold': ['CostOfGoodsSold', 'CostOfRevenue', 'CostOfGoodsAndServicesSold'],
-        'GrossProfit': ['GrossProfit'],
-        'CurrentAssets': ['AssetsCurrent'],
-        'CurrentLiabilities': ['LiabilitiesCurrent'],
-        'NetIncome': ['NetIncomeLoss'],
-        'TotalAssets': ['Assets'],
-        'StockholdersEquity': ['StockholdersEquity', 'Equity']
-    }
-
-    def collect_data_points(key, tag_list, data_points):
-        data_points[key] = []
-        for namespace in namespaces:
-            ns_data = facts.get(namespace, {})
-            for tag_name in tag_list:
-                tag_data = ns_data.get(tag_name)
-                if tag_data and 'units' in tag_data:
-                    for unit, values in tag_data['units'].items():
-                        for item in values:
-                            if item.get('form') == '10-K':
-                                end_date = item.get('end')
-                                fy = int(item.get('fy')) if item.get('fy') else None
-                                data_point = {
-                                    'item': key,
-                                    'end': end_date,
-                                    'val': item.get('val'),
-                                    'namespace': namespace,
-                                    'tag': tag_name,
-                                    'unit': unit,
-                                    'form': item.get('form'),
-                                    'Year': fy
-                                }
-                                data_points[key].append(data_point)
-        
-        # Debug log: Print data before filtering and sorting
-        print(f"\nCollected raw data points for {key}:")
-        for dp in data_points[key]:
-            print(dp)
-
-        if data_points[key]:
-            df_temp = pd.DataFrame(data_points[key])
-            df_temp['end'] = pd.to_datetime(df_temp['end'])
-
-            # Sort values first by year and then by end date to get the latest report for each year
-            df_temp.sort_values(by=['Year', 'end'], ascending=[False, False], inplace=True)
-
-            # Drop duplicates by year, keeping the latest end date within each year
-            df_temp = df_temp.drop_duplicates(subset=['Year'])
-
-            # Only keep the most recent `num_years` worth of data
-            df_temp = df_temp.head(num_years)
-
-            if key == 'Revenue':
-                df_temp = df_temp.loc[df_temp.groupby('Year')['val'].idxmax()]
-
-            # Debug log: Print data after sorting and filtering
-            print(f"\nData points for {key} after sorting and filtering:")
-            print(df_temp)
-            
-            data_points[key] = df_temp.to_dict('records')
-
-        print(f"Collected {len(data_points[key])} data points for {key}.")
-
-    collect_data_points('Revenue', revenue_tags, data_points)
+    # Collect data for all tags
     for key, tag_list in tags.items():
-        if key != 'Revenue':
-            collect_data_points(key, tag_list, data_points)
+        collect_data_points(facts, namespaces, key, tag_list, data_points, num_years)
 
     return data_points
 
@@ -128,17 +73,9 @@ def compile_financial_data(data_points, num_years):
     for key, items in data_points.items():
         df = pd.DataFrame(items)
         if not df.empty:
-            # Debug log: Print before grouping
-            print(f"\nData points for {key} before grouping:")
-            print(df)
-            
             df = df.loc[df.groupby('Year')['val'].idxmax()]
             df = df[['Year', 'val']].rename(columns={'val': key})
             df_dict[key] = df
-
-            # Debug log: Print after grouping
-            print(f"\nData points for {key} after grouping:")
-            print(df)
 
     if not df_dict:
         print("No financial data available.")
@@ -151,9 +88,5 @@ def compile_financial_data(data_points, num_years):
     df_merged = df_merged.loc[:, ~df_merged.columns.str.endswith('_dup')]
     df_merged.sort_values('Year', ascending=False, inplace=True)
     df_merged = df_merged.head(num_years)
-
-    # Debug log: Final merged DataFrame
-    print("\nFinal merged DataFrame:")
-    print(df_merged)
 
     return df_merged
